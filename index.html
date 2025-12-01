@@ -2,341 +2,424 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>牌効率チェッカー（シンプル版）</title>
+  <title>牌効率チェッカー（シャンテン戻しなし版）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 16px;
-      background: #0b1724;
-      color: #f5f5f5;
+      margin: 0;
+      padding: 16px;
+      background: #111;
+      color: #eee;
     }
-    h1 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 0.5rem;
+    }
     .card {
-      padding: 12px;
-      border-radius: 6px;
-      background: #0f2235;
-      margin-bottom: 12px;
+      background: #1b1b1b;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    label {
+      font-size: 0.9rem;
     }
     input[type="text"] {
       width: 100%;
-      box-sizing: border-box;
-      padding: 4px;
+      padding: 8px 10px;
       margin-top: 4px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #111;
+      color: #eee;
+      box-sizing: border-box;
+      font-size: 0.95rem;
+      font-family: "SF Mono", Menlo, monospace;
     }
     button {
-      margin-top: 8px;
-      padding: 8px 16px;
-      border-radius: 4px;
+      margin-top: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
       border: none;
-      background: #2d8cf0;
+      background: #3b82f6;
       color: white;
-      font-weight: bold;
+      font-size: 0.9rem;
       cursor: pointer;
     }
     button:hover {
-      background: #1a73d9;
+      background: #2563eb;
+    }
+    .checkbox-row {
+      margin-top: 8px;
+      font-size: 0.9rem;
+    }
+    .error {
+      margin-top: 8px;
+      color: #f97373;
+      font-size: 0.85rem;
+    }
+    .result {
+      margin-top: 16px;
+      font-size: 0.9rem;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 12px;
+      margin-top: 8px;
       font-size: 0.85rem;
     }
     th, td {
-      border: 1px solid #506480;
-      padding: 4px;
+      padding: 6px 4px;
+      border-bottom: 1px solid #333;
+      text-align: left;
     }
     th {
-      background: #102840;
+      border-bottom: 1px solid #555;
+      color: #ddd;
     }
-    .best {
-      background: #153b20;
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #1f2937;
+      font-size: 0.7rem;
+      margin-left: 4px;
     }
-    code {
-      background: #12263a;
-      padding: 2px 4px;
-      border-radius: 3px;
+    .small-note {
+      font-size: 0.8rem;
+      color: #aaa;
+      margin-top: 4px;
     }
   </style>
 </head>
 <body>
-  <h1>牌効率チェッカー（シンプル版）</h1>
-
   <div class="card">
-    <div>手牌を入力してください（例：<code>123456m23346889p</code>）</div>
-    <input id="handInput" type="text" placeholder="例: 123456m23346889p">
-    <button onclick="runCalc()">計算する</button>
-    <div id="msg" style="margin-top:8px; font-size:0.85rem; opacity:0.8;"></div>
+    <h1>牌効率チェッカー（シャンテン戻しなし・七対子対応）</h1>
+
+    <label for="handInput">
+      手牌（例：<code>233445677m788p66z</code> ／ 赤は <code>0m0p0s</code>）
+    </label>
+    <input id="handInput" type="text" placeholder="例: 233445677m788p66z">
+
+    <div class="checkbox-row">
+      <label>
+        <input type="checkbox" id="allowBack">
+        シャンテン戻しを許可する（チェックしなければ「戻しなし」）
+      </label>
+    </div>
+
+    <button id="calcBtn">計算する</button>
+
+    <div id="error" class="error"></div>
+    <div id="result" class="result"></div>
   </div>
 
-  <div id="result"></div>
-
   <script>
-    /***************
-     *  牌の基本
-     ***************/
-    // 0-8:1m〜9m, 9-17:1p〜9p, 18-26:1s〜9s, 27-33:1z〜7z
+    // --- 牌ID 0〜33 のラベル化 ---
+    function tileLabel(id) {
+      if (id >= 0 && id <= 8)  return (id + 1) + "m";
+      if (id >= 9 && id <= 17) return (id - 8) + "p";
+      if (id >= 18 && id <= 26) return (id - 17) + "s";
+      const z = ["1z","2z","3z","4z","5z","6z","7z"];
+      return z[id - 27];
+    }
+
+    // suit + num → ID
     function tileId(suit, num) {
       if (suit === "m") return num - 1;
-      if (suit === "p") return 9 + (num - 1);
-      if (suit === "s") return 18 + (num - 1);
-      if (suit === "z") return 27 + (num - 1);
-      throw new Error("unknown suit: " + suit);
+      if (suit === "p") return 9 + num - 1;
+      if (suit === "s") return 18 + num - 1;
+      if (suit === "z") return 27 + num - 1;
+      return -1;
     }
 
-    function tileLabel(tid) {
-      if (0 <= tid && tid <= 8) return (tid + 1) + "m";
-      if (9 <= tid && tid <= 17) return (tid - 8) + "p";
-      if (18 <= tid && tid <= 26) return (tid - 17) + "s";
-      const zname = {27:"1z",28:"2z",29:"3z",30:"4z",31:"5z",32:"6z",33:"7z"};
-      return zname[tid] || "?";
-    }
-
-    // '123456m23346889p' など → 34配列
-    // 赤ドラ 0m/0p/0s を書いた場合は 5 として扱う
-    function parseHandMs(pattern) {
-      const hand = new Array(34).fill(0);
+    // 入力文字列 → 34長配列
+    function parseHand(str) {
+      const h = new Array(34).fill(0);
+      str = str.trim();
       let nums = [];
-      for (const ch of pattern) {
-        if ("0123456789".includes(ch)) {
+      for (const ch of str) {
+        if (ch >= "0" && ch <= "9") {
           nums.push(ch);
         } else if ("mpsz".includes(ch)) {
           const suit = ch;
           for (const n of nums) {
-            let num = Number(n);
-            if (num === 0 && (suit === "m" || suit === "p" || suit === "s")) {
-              num = 5;  // 赤 → 5
+            let num = parseInt(n, 10);
+            if (num === 0 && "mps".includes(suit)) num = 5; // 赤は5として扱う
+            const id = tileId(suit, num);
+            if (id >= 0 && id < 34) {
+              h[id]++;
             }
-            const tid = tileId(suit, num);
-            hand[tid] += 1;
           }
           nums = [];
-        } else if (ch.trim() === "") {
-          // 空白は無視
+        } else if (ch === " " || ch === "\t") {
+          // 無視
         } else {
-          throw new Error("不正な文字: " + ch);
+          // 不正文字も一応無視
         }
       }
-      return hand;
+      return h;
     }
 
-    /***************
-     * シャンテン
-     ***************/
+    // 配列 → 人間向け文字列
+    function handToString(h) {
+      let s = "";
+      function pushSuit(start, count, suit) {
+        let nums = "";
+        for (let i = 0; i < count; i++) {
+          const id = start + i;
+          for (let k = 0; k < h[id]; k++) {
+            nums += String(i + 1);
+          }
+        }
+        if (nums.length) s += nums + suit;
+      }
+      pushSuit(0, 9, "m");
+      pushSuit(9, 9, "p");
+      pushSuit(18, 9, "s");
+      pushSuit(27, 7, "z");
+      return s || "(牌なし)";
+    }
+
+    // --- 通常手のシャンテン ---
     function shantenNormal(hand) {
-      let minShanten = 8;
       const h = hand.slice();
+      let minSh = 8; // 最大でも8くらい
 
       function dfs(i, mentsu, taatsu, hasPair) {
+        // 次の非ゼロIDへ
         while (i < 34 && h[i] === 0) i++;
         if (i >= 34) {
           let t = taatsu;
           if (mentsu + t > 4) t = 4 - mentsu;
           const sh = 8 - mentsu * 2 - t - (hasPair ? 1 : 0);
-          if (sh < minShanten) minShanten = sh;
+          if (sh < minSh) minSh = sh;
           return;
         }
 
+        // 雀頭
         if (!hasPair && h[i] >= 2) {
           h[i] -= 2;
           dfs(i, mentsu, taatsu, true);
           h[i] += 2;
         }
+        // 刻子
         if (h[i] >= 3) {
           h[i] -= 3;
-          dfs(i, mentsu+1, taatsu, hasPair);
+          dfs(i, mentsu + 1, taatsu, hasPair);
           h[i] += 3;
         }
-
-        if (i <= 24 && (i % 9) <= 6) {
-          if (h[i]>0 && h[i+1]>0 && h[i+2]>0) {
-            h[i]--; h[i+1]--; h[i+2]--;
-            dfs(i, mentsu+1, taatsu, hasPair);
-            h[i]++; h[i+1]++; h[i+2]++;
+        // 順子・ターツ（数牌のみ）
+        if (i < 27 && i % 9 <= 6) {
+          // 順子
+          if (h[i] > 0 && h[i + 1] > 0 && h[i + 2] > 0) {
+            h[i]--; h[i + 1]--; h[i + 2]--;
+            dfs(i, mentsu + 1, taatsu, hasPair);
+            h[i]++; h[i + 1]++; h[i + 2]++;
+          }
+          // 両面ターツ
+          if (h[i] > 0 && h[i + 1] > 0) {
+            h[i]--; h[i + 1]--;
+            dfs(i, mentsu, taatsu + 1, hasPair);
+            h[i]++; h[i + 1]++;
+          }
+          // カンチャンターツ
+          if (h[i] > 0 && h[i + 2] > 0) {
+            h[i]--; h[i + 2]--;
+            dfs(i, mentsu, taatsu + 1, hasPair);
+            h[i]++; h[i + 2]++;
           }
         }
-
-        if (i <= 24) {
-          if ((i % 9) <= 7 && h[i]>0 && h[i+1]>0) {
-            h[i]--; h[i+1]--;
-            dfs(i, mentsu, taatsu+1, hasPair);
-            h[i]++; h[i+1]++;
-          }
-          if ((i % 9) <= 6 && h[i]>0 && h[i+2]>0) {
-            h[i]--; h[i+2]--;
-            dfs(i, mentsu, taatsu+1, hasPair);
-            h[i]++; h[i+2]++;
-          }
-        }
-
-        dfs(i+1, mentsu, taatsu, hasPair);
+        // この牌を使わない
+        dfs(i + 1, mentsu, taatsu, hasPair);
       }
 
-      dfs(0,0,0,false);
-      return minShanten;
+      dfs(0, 0, 0, false);
+      return minSh;
     }
 
+    // --- 七対子のシャンテン（6対子でテンパイ = 0、7対子で和了 = -1） ---
     function shantenChiitoi(hand) {
-      let nPairs = 0, nUnique = 0;
+      let nPairs = 0;
+      let nUnique = 0;
       for (const c of hand) {
         if (c >= 2) nPairs++;
         if (c > 0) nUnique++;
       }
-      if (nPairs > 7) nPairs = 7;
-      let sh = 6 - nPairs;
-      if (nUnique < 7) sh += (7 - nUnique);
+      // 完成：7ペア → -1
+      // 6ペア → 0（テンパイ）
+      // 5ペア → 1 … という定義
+      const sh = 6 - nPairs + Math.max(0, 7 - nUnique);
       return sh;
     }
 
+    // --- 国士無双のシャンテン ---
     function shantenKokushi(hand) {
       const yaochu = [0,8,9,17,18,26,27,28,29,30,31,32,33];
-      let nUnique = 0, hasPair = false;
-      for (const i of yaochu) {
-        if (hand[i] > 0) {
-          nUnique++;
-          if (hand[i] >= 2) hasPair = true;
+      let nUni = 0;
+      let hasPair = false;
+      for (const id of yaochu) {
+        if (hand[id] > 0) {
+          nUni++;
+          if (hand[id] >= 2) hasPair = true;
         }
       }
-      if (nUnique === 13) return hasPair ? 0 : 1;
-      let sh = 13 - nUnique;
-      if (!hasPair) sh -= 1;
+      // 13種類＋対子 → -1
+      // 13種類のみ or 12種類＋対子 → 0（テンパイ）
+      const sh = 13 - nUni - (hasPair ? 1 : 0);
       return sh;
     }
 
     function shantenAll(hand) {
-      return Math.min(shantenNormal(hand), shantenChiitoi(hand), shantenKokushi(hand));
+      const sN = shantenNormal(hand);
+      const sC = shantenChiitoi(hand);
+      const sK = shantenKokushi(hand);
+      return Math.min(sN, sC, sK);
     }
 
-    /***************
-     * 受け入れ計算
-     ***************/
-    function ukeireForDiscard(hand, discardTid) {
-      if (hand[discardTid] === 0) {
-        return { total: 0, afterSh: 999, kinds: [] };
+    // --- 打牌ごとの受け入れ計算 ---
+    function calcForDiscard(origHand, discId, allowBack) {
+      if (origHand[discId] === 0) return null;
+
+      const beforeSh = shantenAll(origHand);
+
+      // まず discId を切って13枚に
+      const h13 = origHand.slice();
+      h13[discId]--;
+
+      const afterDiscardSh = shantenAll(h13);
+      if (!allowBack && afterDiscardSh > beforeSh) {
+        // シャンテン戻し禁止
+        return null;
       }
-      hand[discardTid]--;
-      const afterSh = shantenAll(hand);
 
-      let total = 0;
-      const kinds = [];
+      const improvingTypes = [];
+      let totalUkeire = 0;
 
-      for (let draw=0; draw<34; draw++) {
-        if (hand[draw] >= 4) continue;
-        hand[draw]++;
-        const sh2 = shantenAll(hand);
-        hand[draw]--;
-        if (sh2 < afterSh) {
-          if (!kinds.includes(draw)) kinds.push(draw);
-          const remaining = 4 - hand[draw]; // 場は見ない簡易版
-          total += remaining;
+      // 34種のツモを試す
+      for (let t = 0; t < 34; t++) {
+        if (h13[t] >= 4) continue; // これ以上引けない牌
+
+        // ツモ
+        const h14 = h13.slice();
+        h14[t]++;
+
+        // 14枚からベストの1枚を切ったときの最小シャンテン
+        let bestSh = Infinity;
+        for (let d = 0; d < 34; d++) {
+          if (h14[d] === 0) continue;
+          h14[d]--;
+          const s = shantenAll(h14);
+          h14[d]++;
+          if (s < bestSh) bestSh = s;
+        }
+
+        if (bestSh < afterDiscardSh) {
+          improvingTypes.push(t);
+          // 山に残っていそうな枚数（手牌枚数だけ引いて4枚上限）
+          totalUkeire += (4 - h13[t]);
         }
       }
 
-      hand[discardTid]++;
-      return { total, afterSh, kinds };
+      return {
+        discardId: discId,
+        afterDiscardSh,
+        improvingTypes,
+        totalUkeire
+      };
     }
 
-    // シャンテン戻しをしない候補だけを優先して返す
-    function bestDiscardByUkeireNoBack(hand) {
-      const baseSh = shantenAll(hand);
-      const all = [];
-      const noBack = [];
-      const seen = new Set();
-      const h = hand.slice();
-
-      for (let tid = 0; tid < 34; tid++) {
-        if (h[tid] === 0) continue;
-        if (seen.has(tid)) continue;
-        seen.add(tid);
-
-        // まず「その牌を切った後のシャンテン」を計算して、戻しチェック
-        h[tid]--;
-        const afterShTmp = shantenAll(h);
-        h[tid]++;
-
-        const { total, afterSh, kinds } = ukeireForDiscard(h, tid);
-        const rec = {
-          tileID: tid,
-          ukeire: total,
-          shantenAfter: afterSh,
-          ukeireTiles: kinds,
-          isBack: afterShTmp > baseSh   // trueならシャンテン戻し
-        };
-        all.push(rec);
-        if (!rec.isBack) {
-          noBack.push(rec);
+    function calcAllDiscards(hand, allowBack) {
+      const results = [];
+      for (let id = 0; id < 34; id++) {
+        if (hand[id] === 0) continue;
+        const r = calcForDiscard(hand, id, allowBack);
+        if (r && r.improvingTypes.length > 0) {
+          results.push(r);
         }
       }
 
-      // シャンテン戻しなしの候補があればそれだけを使う
-      let use = noBack.length > 0 ? noBack : all;
+      if (results.length === 0) return [];
 
-      use.sort((a,b) => {
-        if (a.ukeire !== b.ukeire) return b.ukeire - a.ukeire;
-        return a.shantenAfter - b.shantenAfter;
+      // シャンテンが良い順 → 受け入れ枚数多い順でソート
+      results.sort((a, b) => {
+        if (a.afterDiscardSh !== b.afterDiscardSh) {
+          return a.afterDiscardSh - b.afterDiscardSh;
+        }
+        return b.totalUkeire - a.totalUkeire;
       });
 
-      return { baseSh, list: use };
+      // 上位5件だけ
+      return results.slice(0, 5);
     }
 
-    /***************
-     * メイン処理
-     ***************/
-    function runCalc() {
-      const input = document.getElementById("handInput").value.trim();
-      const msg = document.getElementById("msg");
-      const result = document.getElementById("result");
-      msg.textContent = "";
-      result.innerHTML = "";
+    // --- メイン処理 ---
+    document.getElementById("calcBtn").addEventListener("click", () => {
+      const input = document.getElementById("handInput").value;
+      const errEl = document.getElementById("error");
+      const resEl = document.getElementById("result");
+      const allowBack = document.getElementById("allowBack").checked;
 
-      if (!input) {
-        msg.textContent = "手牌を入力してください。";
+      errEl.textContent = "";
+      resEl.textContent = "";
+
+      const hand = parseHand(input);
+      const tileCount = hand.reduce((a,b) => a + b, 0);
+
+      if (tileCount === 0) {
+        errEl.textContent = "手牌が読み取れませんでした。例：233445677m788p66z のように入力してください。";
         return;
       }
 
-      let hand34;
-      try {
-        hand34 = parseHandMs(input);
-      } catch (e) {
-        console.error(e);
-        msg.textContent = "入力の形式がおかしいです: " + e.message;
+      const originalSh = shantenAll(hand);
+      const originalStr = handToString(hand);
+
+      let warn = "";
+      if (tileCount !== 14) {
+        warn = `（現在 ${tileCount} 枚。14枚想定ですが、そのまま計算します）`;
+      }
+
+      const discResults = calcAllDiscards(hand, allowBack);
+
+      let html = "";
+      html += `<div>入力手牌：<code>${originalStr}</code>　枚数：${tileCount}枚 ${warn}</div>`;
+      html += `<div>元の最小シャンテン：<strong>${originalSh}</strong></div>`;
+      html += `<div class="small-note">※ 通常手・七対子・国士のうち最も良いシャンテンを使用</div>`;
+
+      if (discResults.length === 0) {
+        html += `<div style="margin-top:8px;">有効な打牌候補が見つかりませんでした。</div>`;
+        resEl.innerHTML = html;
         return;
       }
 
-      const totalTiles = hand34.reduce((a,b)=>a+b,0);
-      if (totalTiles !== 14) {
-        msg.textContent = "今は14枚の手牌を想定しています（現在 " + totalTiles + " 枚）。";
-        // それでも計算はしてみる
+      html += `<table>
+        <thead>
+          <tr>
+            <th>打牌</th>
+            <th>打牌後シャンテン</th>
+            <th>受け入れ枚数</th>
+            <th>受け入れ牌の種類</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      for (const r of discResults) {
+        const discLabel = tileLabel(r.discardId);
+        const kindLabels = r.improvingTypes.map(tileLabel).join(", ");
+        html += `<tr>
+          <td>${discLabel}</td>
+          <td>${r.afterDiscardSh}</td>
+          <td>${r.totalUkeire}</td>
+          <td>${kindLabels}</td>
+        </tr>`;
       }
 
-      const { baseSh, list } = bestDiscardByUkeireNoBack(hand34);
-      if (list.length === 0) {
-        msg.textContent = "有効な打牌候補が見つかりませんでした。";
-        return;
-      }
-
-      const bestUke = list[0].ukeire;
-      const top5 = list.slice(0, 5);
-
-      let html = "<div>現在のシャンテン数: " + baseSh + "</div>";
-      html += "<div style='margin-top:4px; font-size:0.85rem; opacity:0.85;'>シャンテン戻しになる打牌は候補から除外しています（全て戻しになる場合のみ例外的に表示）。</div>";
-      html += "<div style='margin-top:4px; font-size:0.85rem; opacity:0.85;'>上位5候補だけ表示しています。</div>";
-      html += "<table><tr><th>打牌</th><th>受け入れ枚数</th><th>受け入れ牌の種類</th></tr>";
-
-      for (const r of top5) {
-        const label = tileLabel(r.tileID);
-        const isBest = (r.ukeire === bestUke);
-        const ukeKinds = r.ukeireTiles.map(tileLabel).join(" ");
-        html += "<tr class='" + (isBest ? "best" : "") + "'>";
-        html += "<td>" + label + (r.isBack ? " *" : "") + "</td>";
-        html += "<td>" + r.ukeire + "</td>";
-        html += "<td><code>" + (ukeKinds || "-") + "</code></td>";
-        html += "</tr>";
-      }
-
-      html += "</table>";
-      result.innerHTML = html;
-    }
+      html += `</tbody></table>`;
+      resEl.innerHTML = html;
+    });
   </script>
 </body>
 </html>
