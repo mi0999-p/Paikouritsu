@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>牌効率チェッカー（ツモ進行モード付き）</title>
+  <title>牌効率チェッカー（ツモ進行＆聴牌練習付き）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
@@ -13,7 +13,7 @@
       color: #eee;
     }
     h1 {
-      font-size: 1.4rem;
+      font-size: 1.3rem;
       margin-bottom: 0.5rem;
     }
     .card {
@@ -90,30 +90,29 @@
       margin-top: 4px;
     }
 
-    /* 牌っぽい表示 */
-    .tile {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 20px;
-      height: 28px;
-      padding: 2px 4px;
-      margin: 1px 2px 1px 0;
-      border-radius: 4px;
-      border: 1px solid #555;
-      background: #f9fafb;
-      color: #111;
-      font-size: 0.8rem;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    /* 牌画像 */
+    .tile-img {
+      height: 44px;          /* サイズは好みで */
+      margin-right: 2px;
+      vertical-align: middle;
     }
-    .tile-m { border-color: #f97373; }
-    .tile-p { border-color: #60a5fa; }
-    .tile-s { border-color: #4ade80; }
-    .tile-z { border-color: #e5e7eb; }
+
     .hand-tiles {
       margin-top: 4px;
       margin-bottom: 4px;
     }
+
+    .hand-tile {
+      display: inline-block;
+      margin-right: 2px;
+    }
+    .hand-tile-choice {
+      cursor: pointer;
+    }
+    .hand-tile-choice:hover {
+      outline: 2px solid #facc15;
+    }
+
     .discard-choice {
       cursor: pointer;
     }
@@ -128,18 +127,11 @@
     .radio-group label {
       margin-right: 8px;
     }
-
-    .tile-img {
-  height: 48px;          /* 好きなサイズに調整してOK */
-  margin-right: 2px;
-  vertical-align: middle;
-}
-
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>牌効率チェッカー（シャンテン戻しなし・ツモ進行モード付き）</h1>
+    <h1>牌効率チェッカー（ツモ進行＆聴牌練習付き）</h1>
 
     <label for="handInput">
       手牌入力
@@ -169,7 +161,8 @@
     </div>
 
     <div class="small-note">
-      ※ ツモ進行モード中は、表の「打牌」欄の牌をクリックすると、その牌を切って次ツモに進みます。
+      ・ツモ進行モード中は、<b>手牌の牌画像をタップ</b>して打牌します。<br>
+      ・聴牌時は、<b>切る前は待ち牌を隠し</b>、切ったあとにその待ちと枚数を表示します。
     </div>
 
     <div id="error" class="error"></div>
@@ -179,12 +172,16 @@
   <script>
     // ==== ツモ進行用の状態 ====
     let tsumoMode = false;
-    let wall = [];         // 山
-    let wallPos = 0;       // 次にツモる位置
-    let tsumoHand = null;  // 進行中の手牌
-    let lastDrawId = null; // 直前のツモ牌
+    let wall = [];
+    let wallPos = 0;
+    let tsumoHand = null;
+    let lastDrawId = null;
 
-    // ==== 牌ID → ラベル/見た目 ====
+    // 聴牌選択スコア
+    let tenpaiScoreSum = 0;
+    let tenpaiHandsCount = 0;
+
+    // ==== 牌ID → ラベル ====
     function tileLabel(id) {
       if (id >= 0 && id <= 8)  return (id + 1) + "m";
       if (id >= 9 && id <= 17) return (id - 8) + "p";
@@ -193,48 +190,47 @@
       return z[id - 27];
     }
 
-   // 牌ID → 画像ファイル（あなたの麻雀牌画像）で表示
-function tileSpan(id) {
-  const label = tileLabel(id); // 例: "1m", "5p", "7s", "3z"
-  const num = parseInt(label[0], 10);
-  const suit = label[1];
+    // ==== 牌ID → 画像タグ ====
+    function tileSpan(id) {
+      const label = tileLabel(id); // "1m", "5p", "7s", "3z"
+      const num = parseInt(label[0], 10);
+      const suit = label[1];
+      let fileName = "";
 
-  let fileName = "";
+      if (suit === "m") {
+        fileName = `麻雀牌-${num}萬.jpg`;
+      } else if (suit === "p") {
+        fileName = `麻雀牌-${num}筒.jpg`;
+      } else if (suit === "s") {
+        fileName = `麻雀牌-${num}索.jpg`;
+      } else if (suit === "z") {
+        const honorMap = {
+          1: "東",
+          2: "南",
+          3: "西",
+          4: "北",
+          5: "白",
+          6: "發",
+          7: "中"
+        };
+        const honor = honorMap[num] || "東";
+        fileName = `麻雀牌-${honor}.jpg`;
+      }
 
-  if (suit === "m") {
-    // 萬子: 麻雀牌-1萬.jpg ... 麻雀牌-9萬.jpg
-    fileName = `麻雀牌-${num}萬.png`;
-  } else if (suit === "p") {
-    // 筒子: 麻雀牌-1筒.jpg ... 麻雀牌-9筒.jpg
-    fileName = `麻雀牌-${num}筒.png`;
-  } else if (suit === "s") {
-    // 索子: 麻雀牌-1索.jpg ... 麻雀牌-9索.jpg
-    fileName = `麻雀牌-${num}索.png`;
-  } else if (suit === "z") {
-    // 字牌: 麻雀牌-東南西北白發中.jpg
-    const honorMap = {
-      1: "東",
-      2: "南",
-      3: "西",
-      4: "北",
-      5: "白",
-      6: "發",
-      7: "中"
-    };
-    const honor = honorMap[num] || "東";
-    fileName = `麻雀牌-${honor}.png`;
-  }
+      const src = `tiles/${fileName}`;
+      return `<img src="${src}" alt="${label}" class="tile-img">`;
+    }
 
-  const src = `tiles/${fileName}`; // tiles フォルダに置いた前提
-  return `<img src="${src}" alt="${label}" class="tile-img">`;
-}
-
-
-    function handToTiles(h) {
+    // ==== 手牌 → 牌画像列（クリック可/不可） ====
+    function handToTiles(h, clickable = false) {
       let s = "";
       for (let id = 0; id < 34; id++) {
         for (let k = 0; k < h[id]; k++) {
-          s += tileSpan(id);
+          if (clickable) {
+            s += `<span class="hand-tile hand-tile-choice" data-id="${id}">${tileSpan(id)}</span>`;
+          } else {
+            s += `<span class="hand-tile">${tileSpan(id)}</span>`;
+          }
         }
       }
       return s || "(牌なし)";
@@ -293,8 +289,6 @@ function tileSpan(id) {
             if (id >= 0 && id < 34) h[id]++;
           }
           nums = [];
-        } else {
-          // その他（スペースとか）は無視
         }
       }
       return h;
@@ -334,42 +328,35 @@ function tileSpan(id) {
           return;
         }
 
-        // 対子 → 雀頭
         if (!hasPair && h[i] >= 2) {
           h[i] -= 2;
           dfs(i, mentsu, taatsu, true);
           h[i] += 2;
         }
 
-        // 対子 → ターツ（シャボ候補）
         if (h[i] >= 2) {
           h[i] -= 2;
           dfs(i, mentsu, taatsu + 1, hasPair);
           h[i] += 2;
         }
 
-        // 刻子
         if (h[i] >= 3) {
           h[i] -= 3;
           dfs(i, mentsu + 1, taatsu, hasPair);
           h[i] += 3;
         }
 
-        // 順子・ターツ（数牌のみ）
         if (i < 27 && i % 9 <= 6) {
-          // 順子
           if (h[i] > 0 && h[i + 1] > 0 && h[i + 2] > 0) {
             h[i]--; h[i + 1]--; h[i + 2]--;
             dfs(i, mentsu + 1, taatsu, hasPair);
             h[i]++; h[i + 1]++; h[i + 2]++;
           }
-          // 両面
           if (h[i] > 0 && h[i + 1] > 0) {
             h[i]--; h[i + 1]--;
             dfs(i, mentsu, taatsu + 1, hasPair);
             h[i]++; h[i + 1]++;
           }
-          // カンチャン
           if (h[i] > 0 && h[i + 2] > 0) {
             h[i]--; h[i + 2]--;
             dfs(i, mentsu, taatsu + 1, hasPair);
@@ -377,7 +364,6 @@ function tileSpan(id) {
           }
         }
 
-        // この牌を使わない
         dfs(i + 1, mentsu, taatsu, hasPair);
       }
 
@@ -418,12 +404,11 @@ function tileSpan(id) {
       return Math.min(sN, sC, sK);
     }
 
-    // ==== 打牌ごとの受け入れ計算 ====
+    // ==== 打牌ごとの受け入れ計算（1シャンテン以上用） ====
     function calcForDiscard(origHand, discId, allowBack) {
       if (origHand[discId] === 0) return null;
 
       const beforeSh = shantenAll(origHand);
-
       const h13 = origHand.slice();
       h13[discId]--;
 
@@ -437,7 +422,6 @@ function tileSpan(id) {
 
       for (let t = 0; t < 34; t++) {
         if (h13[t] >= 4) continue;
-
         const h14 = h13.slice();
         h14[t]++;
 
@@ -483,6 +467,58 @@ function tileSpan(id) {
       return results.slice(0, 5);
     }
 
+    // ==== 聴牌用：ある打牌の待ちを計算 ====
+    function calcWaitForDiscard(origHand, discId, allowBack) {
+      if (origHand[discId] === 0) return null;
+
+      const beforeSh = shantenAll(origHand);
+      if (beforeSh !== 0) return null; // 聴牌のとき専用
+
+      const h13 = origHand.slice();
+      h13[discId]--;
+
+      const afterDiscardSh = shantenAll(h13);
+      if (!allowBack && afterDiscardSh > beforeSh) {
+        // ノーテンに戻す打牌は除外（シャンテン戻し禁止のとき）
+        return null;
+      }
+
+      const waitTypes = [];
+      let totalWait = 0;
+
+      for (let t = 0; t < 34; t++) {
+        if (h13[t] >= 4) continue;
+        const h14 = h13.slice();
+        h14[t]++;
+        const sh = shantenAll(h14);
+        if (sh <= -1) { // 和了形になる牌
+          waitTypes.push(t);
+          totalWait += (4 - h13[t]);
+        }
+      }
+
+      return {
+        discardId: discId,
+        waitTypes,
+        totalWait,
+        afterDiscardSh
+      };
+    }
+
+    function calcWaitAllDiscards(hand, allowBack) {
+      const results = [];
+      for (let id = 0; id < 34; id++) {
+        if (hand[id] === 0) continue;
+        const r = calcWaitForDiscard(hand, id, allowBack);
+        if (r && r.waitTypes.length > 0) {
+          results.push(r);
+        }
+      }
+      if (results.length === 0) return [];
+      results.sort((a, b) => b.totalWait - a.totalWait);
+      return results.slice(0, 5);
+    }
+
     // ==== 練習モード選択 ====
     function getPracticeMode() {
       const els = document.querySelectorAll('input[name="practiceSet"]');
@@ -498,26 +534,22 @@ function tileSpan(id) {
       const deck = [];
 
       if (mode === "ps") {
-        // ピンズ(9〜17)＋ソーズ(18〜26) だけ
         for (let id = 9; id <= 26; id++) {
           for (let k = 0; k < 4; k++) deck.push(id);
         }
       } else if (mode === "one") {
-        // 一色のみ（萬/筒/索のどれかをランダムに選ぶ）
-        const suits = [0, 1, 2]; // 0: m, 1: p, 2: s
+        const suits = [0, 1, 2]; // m, p, s
         const s = suits[Math.floor(Math.random() * suits.length)];
-        const base = s * 9; // 0, 9, 18 のどれか
+        const base = s * 9;
         for (let id = base; id < base + 9; id++) {
           for (let k = 0; k < 4; k++) deck.push(id);
         }
       } else {
-        // 通常（全牌）
         for (let id = 0; id < 34; id++) {
           for (let k = 0; k < 4; k++) deck.push(id);
         }
       }
 
-      // シャッフル
       for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -555,7 +587,7 @@ function tileSpan(id) {
 
     document.getElementById("handInput").addEventListener("input", updateCountInfo);
 
-    // ==== 解析＋表示（共通） ====    
+    // ==== 解析＋表示 ====
     function renderAnalysisFromHand(hand, extraMessageHtml = "", enableClick = false) {
       const errEl = document.getElementById("error");
       const resEl = document.getElementById("result");
@@ -572,14 +604,15 @@ function tileSpan(id) {
 
       const originalSh = shantenAll(hand);
       const originalStr = handToString(hand);
-      const handTilesHtml = handToTiles(hand);
+      const clickableHand = enableClick && tsumoMode;
+      const handTilesHtml = handToTiles(hand, clickableHand);
 
       let warn = "";
       if (tileCount !== 14) {
         warn = `（現在 ${tileCount} 枚。14枚想定ですが、そのまま計算します）`;
       }
 
-      // ---- シンプル13枚モード：有効牌のみ表示 ----
+      // --- 13枚：ツモ有効牌一覧 ---
       if (!tsumoMode && tileCount === 13) {
         let html = "";
         html += `<div>入力手牌：</div>`;
@@ -638,9 +671,7 @@ function tileSpan(id) {
         return;
       }
 
-      // ---- 14枚など：打牌候補トップ5 ----
-      const discResults = calcAllDiscards(hand, allowBack);
-
+      // --- 14枚以上共通ヘッダ ---
       let html = "";
       html += `<div>入力手牌：</div>`;
       html += `<div class="hand-tiles">${handTilesHtml}</div>`;
@@ -653,6 +684,70 @@ function tileSpan(id) {
       if (extraMessageHtml) {
         html += `<div class="small-note" style="margin-top:4px;">${extraMessageHtml}</div>`;
       }
+
+      // --- 聴牌（0シャンテン）：待ち牌モード ---
+      if (originalSh === 0) {
+        const waitResults = calcWaitAllDiscards(hand, allowBack);
+
+        if (waitResults.length === 0) {
+          html += `<div style="margin-top:8px;">待ち牌情報を計算できませんでした。</div>`;
+          resEl.innerHTML = html;
+          return;
+        }
+
+        const hideAnswer = tsumoMode; // ツモ進行中は切るまで待ちを隠す
+
+        html += `<table>
+          <thead>
+            <tr>
+              <th>打牌</th>
+              <th>打牌後シャンテン</th>
+              <th>待ち枚数</th>
+              <th>待ち牌</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+        for (const r of waitResults) {
+          const discardCell = (enableClick && tsumoMode)
+            ? `<span class="discard-choice" data-id="${r.discardId}">${tileSpan(r.discardId)}</span>`
+            : tileSpan(r.discardId);
+
+          const countCell = hideAnswer ? "？" : r.totalWait;
+          const kindsCell = hideAnswer
+            ? "（切ったあとに表示）"
+            : r.waitTypes.map(tileSpan).join("");
+
+          html += `<tr>
+            <td>${discardCell}</td>
+            <td>${r.afterDiscardSh}</td>
+            <td>${countCell}</td>
+            <td>${kindsCell}</td>
+          </tr>`;
+        }
+
+        html += `</tbody></table>`;
+        resEl.innerHTML = html;
+
+        if (enableClick && tsumoMode) {
+          document.querySelectorAll(".discard-choice").forEach(el => {
+            el.addEventListener("click", () => {
+              const id = parseInt(el.getAttribute("data-id"), 10);
+              handleDiscardClick(id);
+            });
+          });
+          document.querySelectorAll(".hand-tile-choice").forEach(el => {
+            el.addEventListener("click", () => {
+              const id = parseInt(el.getAttribute("data-id"), 10);
+              handleDiscardClick(id);
+            });
+          });
+        }
+        return;
+      }
+
+      // --- それ以外（1シャンテン以上）：従来通り 有効牌 ---
+      const discResults = calcAllDiscards(hand, allowBack);
 
       if (discResults.length === 0) {
         html += `<div style="margin-top:8px;">有効な打牌候補が見つかりませんでした。</div>`;
@@ -694,12 +789,18 @@ function tileSpan(id) {
             handleDiscardClick(id);
           });
         });
+        document.querySelectorAll(".hand-tile-choice").forEach(el => {
+          el.addEventListener("click", () => {
+            const id = parseInt(el.getAttribute("data-id"), 10);
+            handleDiscardClick(id);
+          });
+        });
       }
     }
 
-    // ==== 通常「計算する」ボタン ====
+    // ==== 通常「計算する」 ====
     document.getElementById("calcBtn").addEventListener("click", () => {
-      tsumoMode = false; // 通常モードに戻す
+      tsumoMode = false;
       const input = document.getElementById("handInput").value;
       const hand = parseHand(input);
       renderAnalysisFromHand(hand);
@@ -707,7 +808,10 @@ function tileSpan(id) {
 
     // ==== ツモ進行スタート ====
     document.getElementById("tsumoStartBtn").addEventListener("click", () => {
-      // 山＆手牌初期化
+      // スコアリセット
+      tenpaiScoreSum = 0;
+      tenpaiHandsCount = 0;
+
       wall = makeShuffledWall();
       wallPos = 0;
       tsumoHand = new Array(34).fill(0);
@@ -716,39 +820,78 @@ function tileSpan(id) {
       }
       tsumoMode = true;
 
-      // 1枚ツモって14枚へ
-      lastDrawId = tsumoOne();
+      const firstDraw = tsumoOne();
+      lastDrawId = firstDraw;
 
       document.getElementById("handInput").value = handToString(tsumoHand);
       updateCountInfo();
 
-      const drawMsg = lastDrawId !== null
-        ? `ツモ進行モード開始。今回のツモ：${tileSpan(lastDrawId)}（練習セット: ${getPracticeMode()}）`
+      const drawMsg = firstDraw !== null
+        ? `ツモ進行モード開始。今回のツモ：${tileSpan(firstDraw)}（練習セット: ${getPracticeMode()}）`
         : `山がありません。`;
 
       renderAnalysisFromHand(tsumoHand, drawMsg, true);
     });
 
-    // ==== ツモモード中：打牌クリックで進行 ====
+    // ==== ツモモード中：牌クリックで打牌 ====
     function handleDiscardClick(discId) {
       if (!tsumoMode || !tsumoHand) return;
       if (tsumoHand[discId] === 0) return;
 
       const errEl = document.getElementById("error");
+      const allowBack = document.getElementById("allowBack").checked;
       errEl.textContent = "";
 
-      // 和了していたら終了
-      const sh = shantenAll(tsumoHand);
-      if (sh <= -1) {
+      const beforeHand = tsumoHand.slice();
+      const beforeSh = shantenAll(beforeHand);
+
+      // すでに和了形なら終了
+      if (beforeSh <= -1) {
         errEl.textContent = "すでに和了形です。ツモ進行モードを終了します。";
         tsumoMode = false;
+
+        const resEl = document.getElementById("result");
+        if (tenpaiHandsCount > 0) {
+          resEl.innerHTML += `<div class="small-note" style="margin-top:8px;">
+            聴牌局での選択スコア：合計差 ${tenpaiScoreSum} 枚（局数 ${tenpaiHandsCount}）
+          </div>`;
+        }
         return;
       }
 
-      // 選んだ牌を捨てる
+      // --- 聴牌局だった場合のスコア計算＆待ち表示用情報 ---
+      let extraInfoHtml = "";
+      if (beforeSh === 0) {
+        let bestWait = 0;
+        let myWait = 0;
+        let myWaitTypes = [];
+
+        for (let id = 0; id < 34; id++) {
+          if (beforeHand[id] === 0) continue;
+          const info = calcWaitForDiscard(beforeHand, id, allowBack);
+          if (!info) continue;
+          if (info.totalWait > bestWait) bestWait = info.totalWait;
+          if (id === discId) {
+            myWait = info.totalWait;
+            myWaitTypes = info.waitTypes.slice();
+          }
+        }
+
+        if (bestWait > 0) {
+          const diff = Math.max(0, bestWait - myWait);
+          tenpaiScoreSum += diff;
+          tenpaiHandsCount += 1;
+
+          const waitsHtml = myWaitTypes.map(tileSpan).join("");
+          extraInfoHtml =
+            `さっきの局面であなたが選んだ打牌の待ち：${waitsHtml} 合計 ${myWait} 枚` +
+            `（その局面の最善は ${bestWait} 枚／差 ${diff} 枚）`;
+        }
+      }
+
+      // 実際に捨てる
       tsumoHand[discId]--;
 
-      // 次ツモ
       const nextDraw = tsumoOne();
       lastDrawId = nextDraw;
 
@@ -756,15 +899,28 @@ function tileSpan(id) {
       updateCountInfo();
 
       if (nextDraw === null) {
-        renderAnalysisFromHand(tsumoHand, "山が尽きました。ツモ進行モードを終了します。", false);
+        let msg = "山が尽きました。ツモ進行モードを終了します。";
+        if (extraInfoHtml) {
+          msg += "<br>" + extraInfoHtml;
+        }
+        renderAnalysisFromHand(tsumoHand, msg, false);
         tsumoMode = false;
+
+        const resEl = document.getElementById("result");
+        if (tenpaiHandsCount > 0) {
+          resEl.innerHTML += `<div class="small-note" style="margin-top:8px;">
+            聴牌局での選択スコア：合計差 ${tenpaiScoreSum} 枚（局数 ${tenpaiHandsCount}）
+          </div>`;
+        }
         return;
       }
 
-      const msg = `あなたの打牌：${tileSpan(discId)} ／ 今回のツモ：${tileSpan(nextDraw)}`;
+      let msg = `あなたの打牌：${tileSpan(discId)} ／ 今回のツモ：${tileSpan(nextDraw)}`;
+      if (extraInfoHtml) {
+        msg += "<br>" + extraInfoHtml;
+      }
       renderAnalysisFromHand(tsumoHand, msg, true);
     }
   </script>
 </body>
 </html>
-
