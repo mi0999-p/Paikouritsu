@@ -217,8 +217,9 @@
         fileName = `麻雀牌-${honor}.jpg`;
       }
 
-      const src = `tiles/${fileName}`;
+      const src = `${fileName}`;  // ← tiles/ を消す
       return `<img src="${src}" alt="${label}" class="tile-img">`;
+
     }
 
     // ==== 手牌 → 牌画像列（クリック可/不可） ====
@@ -924,3 +925,4 @@
   </script>
 </body>
 </html>
+
