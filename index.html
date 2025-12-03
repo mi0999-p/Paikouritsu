@@ -834,95 +834,172 @@
       renderAnalysisFromHand(tsumoHand, drawMsg, true);
     });
 
-    // ==== ツモモード中：牌クリックで打牌 ====
+
     function handleDiscardClick(discId) {
-      if (!tsumoMode || !tsumoHand) return;
-      if (tsumoHand[discId] === 0) return;
+  if (!tsumoMode || !tsumoHand) return;
+  if (tsumoHand[discId] === 0) return;
 
-      const errEl = document.getElementById("error");
-      const allowBack = document.getElementById("allowBack").checked;
-      errEl.textContent = "";
+  const errEl = document.getElementById("error");
+  const allowBack = document.getElementById("allowBack").checked;
+  errEl.textContent = "";
 
-      const beforeHand = tsumoHand.slice();
-      const beforeSh = shantenAll(beforeHand);
+  // 今の手牌をコピー（＝直前の手牌）
+  const beforeHand = tsumoHand.slice();
+  const beforeSh = shantenAll(beforeHand);
 
-      // すでに和了形なら終了
-      if (beforeSh <= -1) {
-        errEl.textContent = "すでに和了形です。ツモ進行モードを終了します。";
-        tsumoMode = false;
+  // すでに和了形なら終了
+  if (beforeSh <= -1) {
+    errEl.textContent = "すでに和了形です。ツモ進行モードを終了します。";
+    tsumoMode = false;
 
-        const resEl = document.getElementById("result");
-        if (tenpaiHandsCount > 0) {
-          resEl.innerHTML += `<div class="small-note" style="margin-top:8px;">
-            聴牌局での選択スコア：合計差 ${tenpaiScoreSum} 枚（局数 ${tenpaiHandsCount}）
-          </div>`;
-        }
-        return;
-      }
-
-      // --- 聴牌局だった場合のスコア計算＆待ち表示用情報 ---
-      let extraInfoHtml = "";
-      if (beforeSh === 0) {
-        let bestWait = 0;
-        let myWait = 0;
-        let myWaitTypes = [];
-
-        for (let id = 0; id < 34; id++) {
-          if (beforeHand[id] === 0) continue;
-          const info = calcWaitForDiscard(beforeHand, id, allowBack);
-          if (!info) continue;
-          if (info.totalWait > bestWait) bestWait = info.totalWait;
-          if (id === discId) {
-            myWait = info.totalWait;
-            myWaitTypes = info.waitTypes.slice();
-          }
-        }
-
-        if (bestWait > 0) {
-          const diff = Math.max(0, bestWait - myWait);
-          tenpaiScoreSum += diff;
-          tenpaiHandsCount += 1;
-
-          const waitsHtml = myWaitTypes.map(tileSpan).join("");
-          extraInfoHtml =
-            `さっきの局面であなたが選んだ打牌の待ち：${waitsHtml} 合計 ${myWait} 枚` +
-            `（その局面の最善は ${bestWait} 枚／差 ${diff} 枚）`;
-        }
-      }
-
-      // 実際に捨てる
-      tsumoHand[discId]--;
-
-      const nextDraw = tsumoOne();
-      lastDrawId = nextDraw;
-
-      document.getElementById("handInput").value = handToString(tsumoHand);
-      updateCountInfo();
-
-      if (nextDraw === null) {
-        let msg = "山が尽きました。ツモ進行モードを終了します。";
-        if (extraInfoHtml) {
-          msg += "<br>" + extraInfoHtml;
-        }
-        renderAnalysisFromHand(tsumoHand, msg, false);
-        tsumoMode = false;
-
-        const resEl = document.getElementById("result");
-        if (tenpaiHandsCount > 0) {
-          resEl.innerHTML += `<div class="small-note" style="margin-top:8px;">
-            聴牌局での選択スコア：合計差 ${tenpaiScoreSum} 枚（局数 ${tenpaiHandsCount}）
-          </div>`;
-        }
-        return;
-      }
-
-      let msg = `あなたの打牌：${tileSpan(discId)} ／ 今回のツモ：${tileSpan(nextDraw)}`;
-      if (extraInfoHtml) {
-        msg += "<br>" + extraInfoHtml;
-      }
-      renderAnalysisFromHand(tsumoHand, msg, true);
+    const resEl = document.getElementById("result");
+    if (tenpaiHandsCount > 0) {
+      resEl.innerHTML += `<div class="small-note" style="margin-top:8px;">
+        聴牌局での選択スコア：合計差 ${tenpaiScoreSum} 枚（局数 ${tenpaiHandsCount}）
+      </div>`;
     }
+    return;
+  }
+
+  // --- 直前の手牌について「正解表」を作る ---
+  let extraInfoHtml = "";
+
+  if (beforeSh === 0) {
+    // ☆聴牌の場合：待ち枚数で評価
+    const answers = calcWaitAllDiscards(beforeHand, allowBack);
+    if (answers.length > 0) {
+      const bestWait = answers[0].totalWait;  // 一番待ちが多い打牌の枚数
+
+      // スコア計算（ベストとの差）
+      let myWait = 0;
+      for (const r of answers) {
+        if (r.discardId === discId) {
+          myWait = r.totalWait;
+          break;
+        }
+      }
+      if (bestWait > 0) {
+        const diff = Math.max(0, bestWait - myWait);
+        tenpaiScoreSum += diff;
+        tenpaiHandsCount += 1;
+      }
+
+      // 正解表をHTML化
+      let table = `<div class="small-note" style="margin-top:8px;">
+        直前の手牌（聴牌）の解答：
+      </div>`;
+      table += `<table>
+        <thead>
+          <tr>
+            <th>打牌</th>
+            <th>待ち枚数</th>
+            <th>待ち牌</th>
+            <th>評価</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      for (const r of answers) {
+        const isBest = (r.totalWait === bestWait);
+        const isMine = (r.discardId === discId);
+        const waitsHtml = r.waitTypes.map(tileSpan).join("");
+        let tag = "";
+        if (isBest && isMine) tag = "◎ ベスト＆あなたの選択";
+        else if (isBest) tag = "○ ベスト";
+        else if (isMine) tag = "▲ あなたの選択";
+
+        table += `<tr>
+          <td>${tileSpan(r.discardId)}</td>
+          <td>${r.totalWait}</td>
+          <td>${waitsHtml}</td>
+          <td>${tag}</td>
+        </tr>`;
+      }
+
+      table += `</tbody></table>`;
+      extraInfoHtml = table;
+    }
+  } else {
+    // ☆まだシャンテンが残っている場合：受け入れ枚数で評価
+    const answers = calcAllDiscards(beforeHand, allowBack);
+    if (answers.length > 0) {
+      const bestUkeire = answers[0].totalUkeire;
+
+      // 正解表（受け入れ版）
+      let table = `<div class="small-note" style="margin-top:8px;">
+        直前の手牌の解答（受け入れ枚数ベース）：
+      </div>`;
+      table += `<table>
+        <thead>
+          <tr>
+            <th>打牌</th>
+            <th>打牌後シャンテン</th>
+            <th>受け入れ枚数</th>
+            <th>受け入れ牌</th>
+            <th>評価</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      for (const r of answers) {
+        const isBest = (r.totalUkeire === bestUkeire &&
+                        r.afterDiscardSh === answers[0].afterDiscardSh);
+        const isMine = (r.discardId === discId);
+        const kindsHtml = r.improvingTypes.map(tileSpan).join("");
+        let tag = "";
+        if (isBest && isMine) tag = "◎ ベスト＆あなたの選択";
+        else if (isBest) tag = "○ ベスト";
+        else if (isMine) tag = "▲ あなたの選択";
+
+        table += `<tr>
+          <td>${tileSpan(r.discardId)}</td>
+          <td>${r.afterDiscardSh}</td>
+          <td>${r.totalUkeire}</td>
+          <td>${kindsHtml}</td>
+          <td>${tag}</td>
+        </tr>`;
+      }
+
+      table += `</tbody></table>`;
+      extraInfoHtml = table;
+    }
+  }
+
+  // --- 実際にその牌を捨てる ---
+  tsumoHand[discId]--;
+
+  // 次ツモ（ツモ進行モードなので1枚引く）
+  const nextDraw = tsumoOne();
+  lastDrawId = nextDraw;
+
+  document.getElementById("handInput").value = handToString(tsumoHand);
+  updateCountInfo();
+
+  if (nextDraw === null) {
+    let msg = "山が尽きました。ツモ進行モードを終了します。";
+    if (extraInfoHtml) {
+      msg += "<br>" + extraInfoHtml;
+    }
+    renderAnalysisFromHand(tsumoHand, msg, false);
+    tsumoMode = false;
+
+    const resEl = document.getElementById("result");
+    if (tenpaiHandsCount > 0) {
+      resEl.innerHTML += `<div class="small-note" style="margin-top:8px;">
+        聴牌局での選択スコア：合計差 ${tenpaiScoreSum} 枚（局数 ${tenpaiHandsCount}）
+      </div>`;
+    }
+    return;
+  }
+
+  let msg = `あなたの打牌：${tileSpan(discId)} ／ 今回のツモ：${tileSpan(nextDraw)}`;
+  if (extraInfoHtml) {
+    msg += "<br>" + extraInfoHtml;
+  }
+  renderAnalysisFromHand(tsumoHand, msg, true);
+}
   </script>
 </body>
 </html>
+
 
