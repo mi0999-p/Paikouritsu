@@ -128,6 +128,13 @@
     .radio-group label {
       margin-right: 8px;
     }
+
+    .tile-img {
+  height: 48px;          /* 好きなサイズに調整してOK */
+  margin-right: 2px;
+  vertical-align: middle;
+}
+
   </style>
 </head>
 <body>
@@ -186,26 +193,42 @@
       return z[id - 27];
     }
 
-    function tileSpan(id) {
-      let num, suit, cls;
-      if (id >= 0 && id <= 8) {
-        num = id + 1; suit = "m"; cls = "tile-m";
-      } else if (id >= 9 && id <= 17) {
-        num = id - 8; suit = "p"; cls = "tile-p";
-      } else if (id >= 18 && id <= 26) {
-        num = id - 17; suit = "s"; cls = "tile-s";
-      } else {
-        num = id - 26; suit = "z"; cls = "tile-z";
-      }
-      let text;
-      if (suit === "z") {
-        const zs = ["東","南","西","北","白","發","中"];
-        text = zs[num - 1] || "?";
-      } else {
-        text = String(num);
-      }
-      return `<span class="tile ${cls}">${text}</span>`;
-    }
+   // 牌ID → 画像ファイル（あなたの麻雀牌画像）で表示
+function tileSpan(id) {
+  const label = tileLabel(id); // 例: "1m", "5p", "7s", "3z"
+  const num = parseInt(label[0], 10);
+  const suit = label[1];
+
+  let fileName = "";
+
+  if (suit === "m") {
+    // 萬子: 麻雀牌-1萬.jpg ... 麻雀牌-9萬.jpg
+    fileName = `麻雀牌-${num}萬.png`;
+  } else if (suit === "p") {
+    // 筒子: 麻雀牌-1筒.jpg ... 麻雀牌-9筒.jpg
+    fileName = `麻雀牌-${num}筒.png`;
+  } else if (suit === "s") {
+    // 索子: 麻雀牌-1索.jpg ... 麻雀牌-9索.jpg
+    fileName = `麻雀牌-${num}索.png`;
+  } else if (suit === "z") {
+    // 字牌: 麻雀牌-東南西北白發中.jpg
+    const honorMap = {
+      1: "東",
+      2: "南",
+      3: "西",
+      4: "北",
+      5: "白",
+      6: "發",
+      7: "中"
+    };
+    const honor = honorMap[num] || "東";
+    fileName = `麻雀牌-${honor}.png`;
+  }
+
+  const src = `tiles/${fileName}`; // tiles フォルダに置いた前提
+  return `<img src="${src}" alt="${label}" class="tile-img">`;
+}
+
 
     function handToTiles(h) {
       let s = "";
@@ -744,3 +767,4 @@
   </script>
 </body>
 </html>
+
