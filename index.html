@@ -314,63 +314,77 @@
       return s || "(牌なし)";
     }
 
-    // ==== シャンテン計算 ====
-    function shantenNormal(hand) {
-      const h = hand.slice();
-      let minSh = 8;
+   // ==== シャンテン計算（面子手）修正版 ====
+function shantenNormal(hand) {
+  const h = hand.slice();
+  let minSh = 8;
 
-      function dfs(i, mentsu, taatsu, hasPair) {
-        while (i < 34 && h[i] === 0) i++;
-        if (i >= 34) {
-          let t = taatsu;
-          if (mentsu + t > 4) t = 4 - mentsu;
-          const sh = 8 - mentsu * 2 - t - (hasPair ? 1 : 0);
-          if (sh < minSh) minSh = sh;
-          return;
-        }
+  function dfs(i, mentsu, taatsu, hasPair) {
+    // 牌がないところはスキップ
+    while (i < 34 && h[i] === 0) i++;
+    if (i >= 34) {
+      // 面子4つ＋頭1つにどれだけ近いか
+      let t = taatsu;
+      if (mentsu + t > 4) t = 4 - mentsu;
+      const sh = 8 - mentsu * 2 - t - (hasPair ? 1 : 0);
+      if (sh < minSh) minSh = sh;
+      return;
+    }
 
-        if (!hasPair && h[i] >= 2) {
-          h[i] -= 2;
-          dfs(i, mentsu, taatsu, true);
-          h[i] += 2;
-        }
+    // 雀頭候補
+    if (!hasPair && h[i] >= 2) {
+      h[i] -= 2;
+      dfs(i, mentsu, taatsu, true);
+      h[i] += 2;
+    }
 
-        if (h[i] >= 2) {
-          h[i] -= 2;
-          dfs(i, mentsu, taatsu + 1, hasPair);
-          h[i] += 2;
-        }
+    // 対子ターツ（シャボ形）
+    if (h[i] >= 2) {
+      h[i] -= 2;
+      dfs(i, mentsu, taatsu + 1, hasPair);
+      h[i] += 2;
+    }
 
-        if (h[i] >= 3) {
-          h[i] -= 3;
-          dfs(i, mentsu + 1, taatsu, hasPair);
-          h[i] += 3;
-        }
+    // 刻子
+    if (h[i] >= 3) {
+      h[i] -= 3;
+      dfs(i, mentsu + 1, taatsu, hasPair);
+      h[i] += 3;
+    }
 
-        if (i < 27 && i % 9 <= 6) {
-          if (h[i] > 0 && h[i + 1] > 0 && h[i + 2] > 0) {
-            h[i]--; h[i + 1]--; h[i + 2]--;
-            dfs(i, mentsu + 1, taatsu, hasPair);
-            h[i]++; h[i + 1]++; h[i + 2]++;
-          }
-          if (h[i] > 0 && h[i + 1] > 0) {
-            h[i]--; h[i + 1]--;
-            dfs(i, mentsu, taatsu + 1, hasPair);
-            h[i]++; h[i + 1]++;
-          }
-          if (h[i] > 0 && h[i + 2] > 0) {
-            h[i]--; h[i + 2]--;
-            dfs(i, mentsu, taatsu + 1, hasPair);
-            h[i]++; h[i + 2]++;
-          }
-        }
+    // 数牌の処理（萬・筒・索）
+    if (i < 27) {
+      const pos = i % 9; // 0〜8 = 1〜9
 
-        dfs(i + 1, mentsu, taatsu, hasPair);
+      // 順子 (x, x+1, x+2)  → xは1〜7
+      if (pos <= 6 && h[i] > 0 && h[i+1] > 0 && h[i+2] > 0) {
+        h[i]--; h[i+1]--; h[i+2]--;
+        dfs(i, mentsu + 1, taatsu, hasPair);
+        h[i]++; h[i+1]++; h[i+2]++;
       }
 
-      dfs(0, 0, 0, false);
-      return minSh;
+      // ターツ (x, x+1)  → 1-2 〜 8-9 まで全部ターツ扱い
+      if (pos <= 7 && h[i] > 0 && h[i+1] > 0) {
+        h[i]--; h[i+1]--;
+        dfs(i, mentsu, taatsu + 1, hasPair);
+        h[i]++; h[i+1]++;
+      }
+
+      // カンチャン (x, x+2) → xは1〜7
+      if (pos <= 6 && h[i] > 0 && h[i+2] > 0) {
+        h[i]--; h[i+2]--;
+        dfs(i, mentsu, taatsu + 1, hasPair);
+        h[i]++; h[i+2]++;
+      }
     }
+
+    // この牌を使わないパターン
+    dfs(i + 1, mentsu, taatsu, hasPair);
+  }
+
+  dfs(0, 0, 0, false);
+  return minSh;
+}
 
     function shantenChiitoi(hand) {
       let nPairs = 0;
@@ -1016,6 +1030,7 @@ function handleDiscardClick(discId) {
   </script>
 </body>
 </html>
+
 
 
 
