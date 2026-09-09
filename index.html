@@ -168,7 +168,8 @@
     <div class="small-note">
       ・ツモ進行モード中は、<b>手牌の牌画像をタップ</b>して打牌します。<br>
       ・<b>切るまでは答えを表示しません</b>。切ったあとにベストとの差を採点します。<br>
-      ・1シャンテン以上は有効牌枚数、聴牌時は待ち枚数で採点します。
+      ・1シャンテン以上は有効牌枚数、聴牌時は待ち枚数で採点します。<br>
+      ・<b>打牌後に聴牌したら、その打牌を最後に終了</b>します（和了牌をツモるまで待ちません）。
     </div>
 
     <div id="error" class="error"></div>
@@ -931,7 +932,32 @@ function shantenNormal(hand) {
       // 実際に打牌
       tsumoHand[discId]--;
 
-      // 次ツモ
+      document.getElementById("handInput").value = handToString(tsumoHand);
+      updateCountInfo();
+
+      // ★ 打牌後に聴牌したら、ここで終了。
+      // 和了牌をツモるまで進めないので、待ち時間が発生しない。
+      const afterDiscardSh = shantenAll(tsumoHand);
+      if (afterDiscardSh === 0) {
+        const resEl = document.getElementById("result");
+        let html = `
+          <div style="font-weight:bold; font-size:1.05rem; margin-bottom:8px;">
+            聴牌！ この打牌で練習終了
+          </div>
+          <div>最後の打牌：${tileSpan(discId)}</div>
+          <div style="margin-top:8px;">聴牌後の13枚：</div>
+          <div class="hand-tiles">${handToTiles(tsumoHand, false)}</div>
+          <div class="small-note">${handToString(tsumoHand)} ／ 0シャンテン</div>`;
+
+        if (feedback.html) html += feedback.html;
+        html += finalScoreHtml();
+
+        resEl.innerHTML = html;
+        tsumoMode = false;
+        return;
+      }
+
+      // まだ聴牌していなければ次ツモへ
       const nextDraw = tsumoOne();
       lastDrawId = nextDraw;
 
@@ -940,16 +966,6 @@ function shantenNormal(hand) {
 
       if (nextDraw === null) {
         let msg = "山が尽きました。ツモ進行モードを終了します。";
-        if (feedback.html) msg += "<br>" + feedback.html;
-        msg += finalScoreHtml();
-        renderAnalysisFromHand(tsumoHand, msg, false);
-        tsumoMode = false;
-        return;
-      }
-
-      // ツモ和了なら終了
-      if (shantenAll(tsumoHand) <= -1) {
-        let msg = `あがり！ ツモ：${tileSpan(nextDraw)}`;
         if (feedback.html) msg += "<br>" + feedback.html;
         msg += finalScoreHtml();
         renderAnalysisFromHand(tsumoHand, msg, false);
